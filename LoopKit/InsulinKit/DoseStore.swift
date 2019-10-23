@@ -1157,21 +1157,21 @@ extension DoseStore {
     ///   - result: An array of dose entries, in chronological order by startDate
     public func getNormalizedDoseEntries(start: Date, end: Date? = nil, completion: @escaping (_ result: DoseStoreResult<[DoseEntry]>) -> Void) {
         insulinDeliveryStore.getCachedDoses(start: start, end: end, isChronological: true) { (insulinDeliveryDoses) in
-            let filteredStart = max(insulinDeliveryDoses.lastBasalEndDate ?? start, start)
+            let lastBasalEndDate = max(insulinDeliveryDoses.lastBasalEndDate ?? start, start)
 
             self.persistenceController.managedObjectContext.perform {
                 do {
-                    let doses: [DoseEntry]
+                    // Includes mutable doses.
+                    var doses = insulinDeliveryDoses.appendedUnion(with: try self.getNormalizedPumpEventDoseEntries(start: lastBasalEndDate, end: end))
+                    
+                    let lastReconciledDoseEndDate = doses.filter { $0.isMutable }.last?.endDate
+                    
+                    let useReservoirAfterDate = self.lastPumpEventsReconciliation ?? lastReconciledDoseEndDate ?? lastBasalEndDate
 
-                    // Reservoir data is used only if it's continuous and the pumpmanager hasn't reconciled since the last reservoir reading
-                    if self.areReservoirValuesValid, let reservoirEndDate = self.lastStoredReservoirValue?.startDate, reservoirEndDate > self.lastPumpEventsReconciliation ?? .distantPast {
-                        let reservoirDoses = try self.getNormalizedReservoirDoseEntries(start: filteredStart, end: end)
-                        let endOfReservoirData = self.lastStoredReservoirValue?.endDate ?? .distantPast
-                        let mutableDoses = try self.getNormalizedMutablePumpEventDoseEntries(start: endOfReservoirData)
-                        doses = insulinDeliveryDoses + reservoirDoses.map({ $0.trimmed(from: filteredStart) }) + mutableDoses
-                    } else {
-                        // Includes mutable doses.
-                        doses = insulinDeliveryDoses.appendedUnion(with: try self.getNormalizedPumpEventDoseEntries(start: filteredStart, end: end))
+                    // Reservoir data is used only if it's continuous and newer than our last reconciliation
+                    if self.areReservoirValuesValid, let reservoirEndDate = self.lastStoredReservoirValue?.startDate, reservoirEndDate > useReservoirAfterDate {
+                        let reservoirDoses = try self.getNormalizedReservoirDoseEntries(start: useReservoirAfterDate, end: end)
+                        doses = insulinDeliveryDoses + reservoirDoses.map({ $0.trimmed(from: useReservoirAfterDate) })
                     }
                     completion(.success(doses))
                 } catch let error as DoseStoreError {
