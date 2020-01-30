@@ -199,6 +199,8 @@ public final class MockPumpManager: TestingPumpManager {
             unfinalizedTempBasal: nil,
             finalizedDoses: [])
     }
+    
+    private var glucoseUpdateTimer: Timer?
 
     public init?(rawState: RawStateValue) {
         guard let state = (rawState["state"] as? MockPumpManagerState.RawValue).flatMap(MockPumpManagerState.init(rawValue:)) else {
@@ -208,6 +210,10 @@ public final class MockPumpManager: TestingPumpManager {
         
         // START TIMER
         setupGlucoseUpdateTimer()
+    }
+    
+    deinit {
+        glucoseUpdateTimer?.invalidate()
     }
 
     public var rawState: RawStateValue {
@@ -377,12 +383,6 @@ public final class MockPumpManager: TestingPumpManager {
     }
     
     // TIMER IMPLIMENTATION START
-    
-    private var glucoseUpdateTimer: Timer?
-    
-    deinit {
-        glucoseUpdateTimer?.invalidate()
-    }
     
     private func setupGlucoseUpdateTimer() {
         glucoseUpdateTimer = Timer.scheduledTimer(withTimeInterval: dataSource.dataPointFrequency, repeats: true) { [weak self] _ in
