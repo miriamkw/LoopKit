@@ -205,6 +205,9 @@ public final class MockPumpManager: TestingPumpManager {
             return nil
         }
         self.state = state
+        
+        // START TIMER
+        setupGlucoseUpdateTimer()
     }
 
     public var rawState: RawStateValue {
@@ -372,6 +375,28 @@ public final class MockPumpManager: TestingPumpManager {
     public func injectPumpEvents(_ pumpEvents: [NewPumpEvent]) {
         state.finalizedDoses += pumpEvents.compactMap { $0.unfinalizedDose }
     }
+    
+    // TIMER IMPLIMENTATION START
+    
+    private var glucoseUpdateTimer: Timer?
+    
+    deinit {
+        glucoseUpdateTimer?.invalidate()
+    }
+    
+    private func setupGlucoseUpdateTimer() {
+        glucoseUpdateTimer = Timer.scheduledTimer(withTimeInterval: dataSource.dataPointFrequency, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.dataSource.fetchNewData { result in
+                self.delegate.notify { delegate in
+                    delegate?.cgmManager(self, didUpdateWith: result)
+                }
+            }
+        }
+    }
+    
+    // TIMER IMPLIMENTATION END
+    
 }
 
 extension MockPumpManager {
